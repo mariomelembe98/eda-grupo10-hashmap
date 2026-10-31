@@ -5,6 +5,7 @@ import mz.edu.eda.modelo.Estudante;
 import mz.edu.eda.modelo.LugarEstacionamento;
 import mz.edu.eda.modelo.TipoLugar;
 import mz.edu.eda.modelo.Veiculo;
+import mz.edu.eda.persistencia.RepositorioFicheiros;
 import mz.edu.eda.servico.ParqueService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.io.StringReader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Scanner;
 
@@ -26,6 +28,20 @@ class MenuConsolaTest {
             new MenuConsola(service, in, out).executar();
         }
         return buffer.toString();
+    }
+
+    private ParqueService prepararParqueComOcupacao(int quantidade) {
+        ParqueService service = new ParqueService();
+        service.cadastrarEstudante(new Estudante("U1", "Ana", "841", "E1", "Curso"));
+        for (int i = 1; i <= quantidade; i++) {
+            String sufixo = String.format("%03d", i);
+            String matricula = "AAA-" + sufixo;
+            String lugar = "L" + i;
+            service.cadastrarVeiculo(new Veiculo(matricula, "Toyota", "Yaris", "Azul", "U1"));
+            service.cadastrarLugar(new LugarEstacionamento(lugar, "Bloco A", TipoLugar.ESTUDANTE));
+            service.registarEntrada(matricula, lugar);
+        }
+        return service;
     }
 
     @Test void navegaRegistaEntradaSaidaListagensEConsultas() throws Exception {
@@ -43,6 +59,7 @@ class MenuConsolaTest {
         assertTrue(output.contains("Lugares livres: 0"));
         assertTrue(output.contains("Lugares ocupados: 1"));
         assertTrue(output.contains("Aplicacao encerrada."));
+        assertTrue(output.contains("Ocupacao actual: 0 ocupados | 1 livres"));
         assertEquals(1, service.consultarHistorico().size());
         assertFalse(service.consultarHistorico().getFirst().estaActivo());
     }
@@ -96,5 +113,98 @@ class MenuConsolaTest {
     @Test void fimDaEntradaEncerraMenuSemExcepcao() {
         String output = executar(new ParqueService(), "");
         assertTrue(output.contains("Aplicacao encerrada."));
+    }
+
+    @Test void menuPrincipalAgrupaOperacoesEPreservaNumeros() {
+        String output = executar(new ParqueService(), "0\n");
+        assertTrue(output.contains("GESTAO DE REGISTOS"));
+        assertTrue(output.contains("CONSULTAS DE VEICULOS"));
+        assertTrue(output.contains("MOVIMENTOS"));
+        assertTrue(output.contains("CONSULTAS E RELATORIOS"));
+        assertTrue(output.contains("MANUTENCAO"));
+        for (int opcao = 0; opcao <= 14; opcao++) assertTrue(output.contains("[" + opcao + "]"));
+        assertTrue(output.indexOf("[7] Registar entrada") < output.indexOf("[8] Registar saida"));
+        assertFalse(output.contains("\u001B["));
+        assertTrue(output.contains("Ocupacao actual: 0 ocupados | 0 livres"));
+    }
+
+    @Test void menuPrincipalUsaPluralQuandoNaoHaLugaresOcupados() {
+        String output = executar(new ParqueService(), "0\n");
+        assertTrue(output.contains("Ocupacao actual: 0 ocupados | 0 livres"));
+    }
+
+    @Test void menuPrincipalConcordaQuandoUmLugarEstaOcupado() {
+        String output = executar(prepararParqueComOcupacao(1), "0\n");
+        assertTrue(output.contains("Ocupacao actual: 1 ocupado | 0 livres"));
+        assertFalse(output.contains("Ocupacao actual: 1 ocupados"));
+    }
+
+    @Test void menuPrincipalUsaPluralParaVariosLugaresOcupados() {
+        String output = executar(prepararParqueComOcupacao(2), "0\n");
+        assertTrue(output.contains("Ocupacao actual: 2 ocupados | 0 livres"));
+    }
+
+    @Test void apresentaIndicadoresEEstadoRealDosLugares() {
+        ParqueService service = new ParqueService();
+        service.cadastrarEstudante(new Estudante("U1", "Ana", "841", "E1", "Curso"));
+        service.cadastrarVeiculo(new Veiculo("AAA-111", "Toyota", "Yaris", "Azul", "U1"));
+        service.cadastrarLugar(new LugarEstacionamento("L1", "Bloco A", TipoLugar.ESTUDANTE));
+        service.cadastrarLugar(new LugarEstacionamento("L2", "Bloco B", TipoLugar.ESTUDANTE));
+        service.registarEntrada("AAA-111", "L1");
+
+        String output = executar(service, "12\n0\n");
+        assertTrue(output.contains("Total de lugares cadastrados: 2"));
+        assertTrue(output.contains("Lugares ocupados: 1"));
+        assertTrue(output.contains("Lugares livres: 1"));
+        assertTrue(output.contains("Taxa de ocupacao: 50.0%"));
+        assertTrue(output.contains("L1"));
+        assertTrue(output.contains("[O] Ocupado"));
+        assertTrue(output.contains("[L] Livre"));
+    }
+
+    @Test void informaTaxaIndisponivelQuandoNaoHaLugares() {
+        String output = executar(new ParqueService(), "12\n0\n");
+        assertTrue(output.contains("Total de lugares cadastrados: 0"));
+        assertTrue(output.contains("Taxa de ocupacao: N/D"));
+        assertTrue(output.contains("Nao existem lugares cadastrados."));
+        assertFalse(output.contains("NaN"));
+    }
+
+    @Test void mostraTaxaZeroQuandoTodosOsLugaresEstaoLivres() {
+        ParqueService service = new ParqueService();
+        service.cadastrarLugar(new LugarEstacionamento("L1", "Bloco A", TipoLugar.ESTUDANTE));
+        String output = executar(service, "12\n0\n");
+        assertTrue(output.contains("Lugares ocupados: 0"));
+        assertTrue(output.contains("Lugares livres: 1"));
+        assertTrue(output.contains("Taxa de ocupacao: 0.0%"));
+        assertTrue(output.contains("[L] Livre"));
+    }
+
+    @Test void listagensVaziasMostramMensagensContextuais() {
+        String output = executar(new ParqueService(), "5\n6\n9\n10\n0\n");
+        assertTrue(output.contains("Nenhum veiculo encontrado."));
+        assertTrue(output.contains("Nao ha veiculos estacionados."));
+        assertTrue(output.contains("Sem registos de estacionamento."));
+    }
+
+    @Test void submenusMostramContextoERegressamAoMenuPrincipal() {
+        String output = executar(new ParqueService(), "1\n0\n4\n0\n13\n0\n0\n");
+        assertTrue(output.contains("CADASTRO > UTILIZADOR"));
+        assertTrue(output.contains("GESTAO > ACTUALIZAR REGISTO"));
+        assertTrue(output.contains("CONSULTAS > REGISTOS"));
+        assertTrue(output.contains("Aplicacao encerrada."));
+    }
+
+    @Test void falhaDePersistenciaEApresentadaSemConfirmarCadastro() throws Exception {
+        Path directorio = pasta.resolve("persistencia");
+        Files.createDirectories(directorio);
+        Path ficheiro = directorio.resolve("parque.dat");
+        ParqueService service = new ParqueService(new RepositorioFicheiros(ficheiro));
+        Files.createDirectory(ficheiro);
+        String output = executar(service, "1\n1\nU1\nAna\n841\nE1\nCurso\n0\n");
+        assertTrue(output.contains("ERRO: Falha de persistencia:"));
+        assertTrue(output.contains("A operacao nao foi confirmada."));
+        assertFalse(output.contains("Estudante cadastrado com sucesso."));
+        assertFalse(output.contains("java.io."));
     }
 }

@@ -44,6 +44,10 @@ class MenuConsolaE2ETest {
         assertTrue(apresentacao.contains("Operacao rejeitada: Veiculo ja tem estacionamento activo"));
         assertTrue(apresentacao.contains("Lugares livres: 0"));
         assertTrue(apresentacao.contains("Lugares ocupados: 2"));
+        assertTrue(apresentacao.contains("Total de lugares cadastrados: 2"));
+        assertTrue(apresentacao.contains("Taxa de ocupacao: 100.0%"));
+        assertTrue(apresentacao.contains("[O] Ocupado"));
+        assertTrue(apresentacao.contains("GESTAO DE REGISTOS"));
         assertTrue(apresentacao.contains("Historico completo:"));
         assertTrue(apresentacao.contains("Estacionamentos do utilizador U-E:"));
         assertTrue(apresentacao.contains("Aplicacao encerrada."));
